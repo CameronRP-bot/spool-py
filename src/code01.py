@@ -1,7 +1,9 @@
 # Program 1 will run the trap triggering from the PIRs. Can be set to only trigger at night.
 
 from util import *
-from user_config import *
+import machine
+
+machine.freq(48_000_000)
 
 shared_dict = SharedDict()
 rpi_uart = RPi_UART(shared_dict, i2c=i2c)
@@ -16,7 +18,7 @@ def motion_check():
 
 # Enable checks for spool, clock and switches
 enabled_checks = [
-    spool.enable_check,        # Check that the spool is at the home position
+    #spool.enable_check,        # Check that the spool is at the home position
     clock.enable_check,        # Check that it can trigger at the current time
     switches.enable_check,     # Check that the switches shouldn't disable the trap
 ]

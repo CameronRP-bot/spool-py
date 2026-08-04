@@ -1,6 +1,7 @@
 import pcf8563
 import timezone
 import datetime
+import machine
 from machine import I2C, UART, Pin, PWM, ADC, reset
 from config import *
 import time
@@ -40,7 +41,7 @@ class Spool:
 
         # Photointerrupter pins, set power to off.
         self.en_photo_interrupter = Pin(PIN_EN_PHOTO_INTERRUPTER, Pin.OUT)
-        self.en_photo_interrupter.on() # TODO: Add logic around this so it can be turned off when it is not needed.
+        self.en_photo_interrupter.off()
         self.photo_interrupter_home = Pin(PIN_PHOTO_INTERRUPTER_HOME, Pin.IN)
         self.photo_interrupter_reset = Pin(PIN_PHOTO_INTERRUPTER_RESET, Pin.IN)
 
@@ -51,6 +52,11 @@ class Spool:
         # First guess for reset duration.
         self.home_to_reset_duration = HOME_TO_RESET_DURATION
 
+        # _at_home is set to True when the spool reaches home and will only be unset when the spool is moved away from home.
+        # This is to prevent slight movement in the spool making the photo interrupter think it is not at home anymore, preventing 
+        # the trap from triggering.
+        self._at_home = False
+
         # Current sensor
         self.ina219 = INA219(SHUNT_OHMS, i2c)
         self.ina219.configure(gain = INA219.GAIN_8_320MV)
@@ -60,12 +66,10 @@ class Spool:
 
     def stop(self):
         # Writing both values to high will set the motor driver into "break/stop" mode.
-        self.h_in1.duty_u16(MAX_U16)
-        self.h_in2.duty_u16(MAX_U16)
+        self.h_in1.duty_u16(0)
+        self.h_in2.duty_u16(0)
         self.speed = 0
         self.direction = "stop"
-        # TODO: After we have stopped we might want to switch into LOW, LOW instead
-        # of HIGH, HIGH so the motor driver will go into a sleep mode to save power.
 
     def enable_check(self):
         if self.at_home():
@@ -75,6 +79,7 @@ class Spool:
 
     # _drive_cw is towards reset
     def _drive_cw(self, speed=100):
+        self._at_home = False
         if self.at_reset():
             self.stop()
             return
@@ -89,6 +94,7 @@ class Spool:
 
     # _drive_ccw is towards home
     def _drive_ccw(self, speed=100):
+        self._at_home = False
         if self.at_home():
             self.stop()
             return
@@ -102,10 +108,31 @@ class Spool:
         self.direction = "ccw"
 
     def at_home(self):
-        return self.photo_interrupter_home.value() == 1
+        # If we are already at home, don't check the photo interrupter
+        if self._at_home:
+            return True
+
+        self._at_home = self._check_position(self.photo_interrupter_home)
+
+        return self._at_home
 
     def at_reset(self):
-        return self.photo_interrupter_reset.value() == 1
+        return self._check_position(self.photo_interrupter_reset)
+
+    def _check_position(self, position):
+        # If the photo interrupter is off it can give a false positive, 
+        # but not a false negative so we check the negative first.
+
+        # First check if we are not at the position, this can't be a false negative.
+        if position.value() == 0:
+            return False
+
+        # Turn on photo interrupter and check
+        self.en_photo_interrupter.on()
+        time.sleep_us(100)
+        at_position = position.value() == 1
+        self.en_photo_interrupter.off()
+        return at_position
 
     def spool_is_reset(self):
         # When the spool is reset the reed switch will be close pulling the pin low
@@ -428,15 +455,12 @@ class PIRs:
         self.i2c.writeto(0x3E, bytes([0, value]))
 
 class RPi_UART:
-    # TODO: Add shared I2C object
-
     def __init__(self, shared_dict, i2c = None):
         self.shared_dict = shared_dict
         self._running = True
         self.uart = UART(0, baudrate=9600, tx=Pin(PIN_UART_TX), rx=Pin(PIN_UART_RX))
         self.i2c = i2c
         _thread.start_new_thread(self._uart_loop, ())
-        
 
     def close(self):
         self._running = False

@@ -1,21 +1,23 @@
+## PIN CONFIGURATION ##
+
 # H bridge driver pins
-PIN_H_IN_1 = 9
-PIN_H_IN_2 = 10
+PIN_H_IN_1 = 12
+PIN_H_IN_2 = 13
 
 # Rotary encoder pins
-PIN_ROT_ENC_1 = 4
-PIN_ROT_ENC_2 = 5
-PIN_ROT_ENC_4 = 3
-PIN_ROT_ENC_8 = 6
+PIN_ROT_ENC_1 = 8
+PIN_ROT_ENC_2 = 3
+PIN_ROT_ENC_4 = 7
+PIN_ROT_ENC_8 = 4
 
 # I2C pins
-PIN_SDA = 16
-PIN_SCL = 17
+PIN_SDA = 14
+PIN_SCL = 15
+I2C_BUS_ID = 1
 
 # PIR pins
-PIN_PIR_1 = 13
-PIN_PIR_2 = 12
-PIR_SENSITIVITY = 127 # 0-127
+PIR_APIR = 26
+PIN_PIR_EXTERNAL = 22
 
 # Buzzer Pin
 PIN_BUZZER = 1
@@ -24,23 +26,35 @@ PIN_BUZZER = 1
 PIN_SW_NIGHT_ONLY = 0 # Setup with pull-up
 
 # Photo interrupter pins
-PIN_EN_PHOTO_INTERRUPTER = 11
-PIN_PHOTO_INTERRUPTER_HOME = 15
-PIN_PHOTO_INTERRUPTER_RESET = 14
+PIN_EN_PHOTO_INTERRUPTER = 9
+PIN_PHOTO_INTERRUPTER_HOME = 10
+PIN_PHOTO_INTERRUPTER_RESET = 11
 
 # Electromagnet
-PIN_ELECTROMAGNET_RELEASE = 18
+PIN_ELECTROMAGNET_RELEASE = 21
 
 # UART pins
-PIN_UART_TX = 28
-PIN_UART_RX = 29
+PIN_UART_TX_IN = 16
+PIN_UART_RX_IN = 17
+UART_IN_ID = 0
+PIN_UART_TX_OUT = 24
+PIN_UART_RX_OUT = 25
+UART_OUT_ID = 1
 
 # Switch pins
-PIN_SW_1 = 8
-PIN_SW_2 = 7
+PIN_SW_1 = 2
+PIN_SW_2 = 5
 
 # Spool reed switch pin
-PIN_SPOOL_RESET = 22
+PIN_SPOOL_RESET = 6
+
+# Spool pins
+PIN_EN_6V = 18
+PIN_SERVO_1 = 19
+PIN_SERVO_2 = 20
+
+# Extra GPIO pin
+PIN_GPIO_EXTRA = 23
 
 # INA219 shunt resistor resistance in Ω
 SHUNT_OHMS = 0.1
@@ -75,7 +89,7 @@ class UserConfig():
         self.switch_logic = "OR"
         self.observation_mode = False
         self.motion_message_gap = 10
-        self.post_reset_cooldown_seconds = 20
+        self.post_reset_cooldown_seconds = 1
         self.spool_reed_check = False
         self.program = 1
 

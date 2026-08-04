@@ -10,6 +10,8 @@ from util import *
 from config import *
 import json
 
+machine.freq(48_000_000)
+
 i2c = I2C(id=0, scl=Pin(PIN_SCL), sda=Pin(PIN_SDA))
 
 buzzer = Buzzer()

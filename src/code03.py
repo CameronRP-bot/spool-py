@@ -5,7 +5,6 @@
 #   Camera not enabling it (by default it is disabled and needs to be enabled)
 
 from util import *
-from user_config import *
 
 
 shared_dict = SharedDict()

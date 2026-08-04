@@ -2,7 +2,6 @@
 # This is just a simple HIGH for enable and LOW for disable of the trap on the RP2040 Rx pin.
 
 from util import *
-from user_config import *
 
 spool = Spool()
 apir = APIR()
