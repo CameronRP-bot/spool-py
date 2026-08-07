@@ -11,11 +11,11 @@ apir = APIR()
 clock = Clock()
 
 # Green LED
-led1 = Pin(8, Pin.OUT)
+led1 = Pin(PIN_SW_1, Pin.OUT)
 led1.low()
 
 # Blue LED
-led2 = Pin(7, Pin.OUT)
+led2 = Pin(PIN_SW_2, Pin.OUT)
 led2.low()
 
 led1_off_time = 0

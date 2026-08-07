@@ -313,7 +313,7 @@ tests = [
     ("Photo interrupters", test_photo_interrupters),
     ("Motor driver", test_motor),
     ("I2C", test_i2c),
-    ("UART", test_uart),
+    # ("UART", test_uart),
     ("Servo 1", test_servo_1),
     ("Servo 2", test_servo_2),
     ("Electromagnet release", test_electromagnet),

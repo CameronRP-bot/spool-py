@@ -12,7 +12,7 @@ import json
 
 machine.freq(48_000_000)
 
-i2c = I2C(id=0, scl=Pin(PIN_SCL), sda=Pin(PIN_SDA))
+i2c = I2C(id=I2C_BUS_ID, scl=Pin(PIN_SCL), sda=Pin(PIN_SDA))
 
 buzzer = Buzzer()
 clock = Clock(i2c)

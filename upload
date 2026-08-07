@@ -36,6 +36,9 @@ tmpDir=./mpy
 
 ./compile-mpy
 
+# Copy time file to directory
+cp src/upload_time.py $tmpDir
+
 echo "Clearing Pico filesystem..."
 mpremote exec "import os; [os.remove(f) for f in os.listdir() if not os.stat(f)[0] & 0x4000]"
 

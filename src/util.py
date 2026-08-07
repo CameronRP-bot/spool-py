@@ -26,7 +26,7 @@ sw_or = "or"
 
 user_config = UserConfig()
 
-i2c = I2C(id=0, scl=Pin(PIN_SCL), sda=Pin(PIN_SDA))
+i2c = I2C(id=I2C_BUS_ID, scl=Pin(PIN_SCL), sda=Pin(PIN_SDA))
 
 class Spool:
     def __init__(self, rpi_uart=None):
@@ -458,7 +458,7 @@ class RPi_UART:
     def __init__(self, shared_dict, i2c = None):
         self.shared_dict = shared_dict
         self._running = True
-        self.uart = UART(0, baudrate=9600, tx=Pin(PIN_UART_TX), rx=Pin(PIN_UART_RX))
+        self.uart = UART(0, baudrate=9600, tx=Pin(PIN_UART_TX_IN), rx=Pin(PIN_UART_RX_IN))
         self.i2c = i2c
         _thread.start_new_thread(self._uart_loop, ())
 
@@ -769,7 +769,7 @@ class SharedDict:
 
 class APIR():
     def __init__(self):
-        self.AnalogPin = ADC(27)
+        self.AnalogPin = ADC(PIR_APIR)
         self.min = 0
         self.max = 43_000
         self.avg = (self.min + self.max)/2

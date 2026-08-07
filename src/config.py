@@ -68,10 +68,6 @@ ERROR_OVER_CURRENT = 7
 ERROR_RUNTIME_ERROR = 8
 ERROR_SPOOL_NOT_RELEASING = 9
 
-# Indicator LEDs
-PIN_LED_1 = 7   # PIR trigger
-PIN_LED_2 = 8   # thermal trigger
-
 # This is used so when resetting the first time it knows how long each "step" should be.
 HOME_TO_RESET_DURATION = 13
 

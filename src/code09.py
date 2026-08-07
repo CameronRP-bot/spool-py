@@ -1,4 +1,4 @@
-# Program 8 will run through a reset, home, trigger, home cycle.
+# Program 9 will run through a reset, home, trigger, home cycle.
 
 import time
 from util import Spool, user_config
