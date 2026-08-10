@@ -59,6 +59,13 @@ PIN_GPIO_EXTRA = 23
 # INA219 shunt resistor resistance in Ω
 SHUNT_OHMS = 0.1
 
+# Ratchet Door Servo
+RATCHET_CYCLES = 10 # How many times to ratchet the door to open it fully
+SERVO_DOOR_DOWN_RATCHET = 1700 # Down ratchet position
+SERVO_DOOR_UP_RATCHET = 1200 # Up ratchet position
+SERVO_DOOR_HOLD = 1300 # Hold position (ready to release)
+SERVO_DOOR_RELEASE = 1050 # Release the door
+
 # Error codes
 ERROR_TIME_NOT_SET = 3
 ERROR_NO_PROGRAM_FOUND = 4

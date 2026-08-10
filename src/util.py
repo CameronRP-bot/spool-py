@@ -731,6 +731,50 @@ class Message():
 def motion_message():
     return Message(0, "MOTION")
 
+class RatchetDoor():
+    def __init__(self, pin):
+        self.en_6v = Pin(PIN_EN_6V, Pin.OUT)
+        self.en_6v.off()
+        self.servo = PWM(Pin(pin), freq=50)
+        self.servo.duty_u16(0)
+
+    def _move_to(self, pulse_us):
+        self.servo.duty_u16(int(pulse_us / 20_000 * MAX_U16))
+
+    def _power_on(self):
+        self.en_6v.on()
+        time.sleep_ms(10)  # wait for 6V to stabilize
+
+    def _power_off(self):
+        self.servo.duty_u16(0)
+        self.en_6v.off()
+
+    def reset(self):
+        print("Running ratchet door reset")
+        self._power_on()
+        try:
+            for _ in range(RATCHET_CYCLES):
+                self._move_to(SERVO_DOOR_DOWN_RATCHET)
+                time.sleep(0.6)
+                self._move_to(SERVO_DOOR_UP_RATCHET)
+                time.sleep(0.6)
+            self._move_to(SERVO_DOOR_HOLD)
+            time.sleep(0.6)
+        finally:
+            self._power_off()
+        print("Finished ratchet door reset")
+
+    def release(self):
+        print("Releasing ratchet door")
+        self._power_on()
+        try:
+            self._move_to(SERVO_DOOR_RELEASE)
+            time.sleep(0.6)
+            self._move_to(SERVO_DOOR_HOLD)
+            time.sleep(0.6)
+        finally:
+            self._power_off()
+
 class SharedDict:
     def __init__(self):
         self._data = {}
