@@ -2,12 +2,12 @@
 
 import time
 from util import Spool
-from user_config import *
 
 shared_dict = SharedDict()
 rpi_uart = RPi_UART(shared_dict, i2c=i2c)
 spool = Spool(rpi_uart=rpi_uart)
 
+# It will go through the loop every `loop_time_seconds` amount of seconds.
 loop_time_seconds = 60 * 3
 
 print("Resetting")
