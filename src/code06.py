@@ -1,17 +1,16 @@
 # Program 6 will run the trap triggering from the APIRs.
 
 from util import *
-from user_config import *
 
 shared_dict = SharedDict()
 rpi_uart = RPi_UART(shared_dict, i2c=i2c)
 spool = Spool(rpi_uart=rpi_uart)
-apirs = APIR()
+apir = APIR()
 clock = Clock()
 switches = Switches()
 
 # Function to run to check if there is motion
-motion_check = apirs.motion
+motion_check = apir.motion
 
 # All enable checks need to pass for the trap to be able to trigger
 enabled_checks = [
@@ -21,4 +20,4 @@ enabled_checks = [
 ]
 
 print("Running trap sequence.")
-run_sequence(spool, motion_check, enabled_checks, rpi_uart=rpi_uart)
+run_sequence(spool, motion_check, enabled_checks, rpi_uart=rpi_uart, apir=apir)

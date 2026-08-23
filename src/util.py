@@ -823,6 +823,8 @@ class APIR():
         self.last_time = time.time_ns()
         self.displacement_triggered = False
         self.gradient_triggered = False
+        self.d_val = 0
+        self.dt_val = 0
 
     def motion(self):
         # Prevent updating too frequently, 0.5ms
@@ -834,14 +836,12 @@ class APIR():
         new_time = time.time_ns()
 
         # Check if the new value meets the displacement threshold
-        displacement = abs(new_value - self.avg)
-        self.displacement_triggered = displacement > self.displacement_threshold
-        # print(displacement)
-        # print(self.displacement_triggered)
+        self.d_val = abs(new_value - self.avg)
+        self.displacement_triggered = self.d_val > self.displacement_threshold
 
         # Check if the new value meets the gradient threshold
-        gradient = abs((new_value - self.previous_value) / (new_time - self.last_time) * 1_000_000)
-        self.gradient_triggered = gradient > self.gradient_threshold
+        self.dt_val = abs((new_value - self.previous_value) / (new_time - self.last_time) * 1_000_000)
+        self.gradient_triggered = self.dt_val > self.gradient_threshold
         # print(gradient)
         # print(self.gradient_triggered)
 
@@ -875,6 +875,7 @@ def run_sequence(
     motion_check,
     enabled_checks,
     rpi_uart=None,
+    apir=None
     ):
     while True:
         # Step 1: Reset spool
@@ -889,6 +890,10 @@ def run_sequence(
         old_enabled = None  # Track previous enabled state so we can log changes.
         old_state = None
         old_failed_check_reasons = None
+        apir_max_dt = 0
+        apir_max_d = 0
+        apir_min = float('inf')
+        apir_max = 0
         while True:
             # Check for motion.
             motion = motion_check()
@@ -903,6 +908,27 @@ def run_sequence(
             # Check the enabled state
             enabled, failed_check_reasons = check_checks(enabled_checks)
 
+            if old_enabled != enabled:
+                if enabled:
+                    # Going from disabled to enabled, or first check while enabled.
+                    apir_max_dt = 0
+                    apir_max_d = 0
+                    apir_min = float('inf')
+                    apir_max = 0
+                    if rpi_uart:
+                        rpi_uart.send_message(Message(0, "ENABLED"))
+                elif old_enabled is not None:
+                    # Going from enabled to disabled
+                    if rpi_uart and apir:
+                        rpi_uart.send_message(Message(0, "MAX_MOTION", f"[{apir_max_dt}, {apir_max_d}, {apir_min}, {apir_max}]"))
+            old_enabled = enabled
+
+            if enabled and apir:
+                apir_max_dt = max(apir_max_dt, apir.dt_val)
+                apir_max_d = max(apir_max_d, apir.d_val)
+                apir_min = min(apir_min, apir.previous_value)
+                apir_max = max(apir_max, apir.previous_value)
+
             # Send message if the disabled reasons change changed
             if not enabled and failed_check_reasons != old_failed_check_reasons:
                 if rpi_uart:
@@ -910,13 +936,6 @@ def run_sequence(
                 else:
                     print(failed_check_reasons)
             old_failed_check_reasons = failed_check_reasons
-
-            # Send message if the trap is now enabled
-            if old_enabled != enabled:
-                if enabled:
-                    if rpi_uart:
-                        rpi_uart.send_message(Message(0, "ENABLED"))
-                old_enabled = enabled
 
 
             if motion and enabled:

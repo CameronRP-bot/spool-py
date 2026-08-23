@@ -29,4 +29,4 @@ enabled_checks = [
 ]
 
 print("Running trap sequence.")
-run_sequence(spool, motion_check, enabled_checks, rpi_uart=rpi_uart)
+run_sequence(spool, motion_check, enabled_checks, rpi_uart=rpi_uart, apir=apir)
