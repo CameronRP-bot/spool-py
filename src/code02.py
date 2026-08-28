@@ -9,7 +9,7 @@ clock = Clock()
 switches = Switches()
 
 # We are just using a digital read from the RX pin, for this reason we can't use the UART
-rx_pin = Pin(PIN_UART_RX, Pin.IN, Pin.PULL_DOWN)
+rx_pin = Pin(PIN_UART_RX_IN, Pin.IN, Pin.PULL_DOWN)
 
 # Motion from the PIRs
 def motion_check():

@@ -4,6 +4,8 @@
 #   External Switches
 #   Camera not enabling it (by default it is disabled and needs to be enabled)
 
+import machine
+
 from util import *
 
 machine.freq(48_000_000)

@@ -1,8 +1,11 @@
 # Program 7 will run the trap triggering from the Analog PIRs. Can be set to only trigger at night.
 
 import time
-from util import Spool, APIR, Clock
+
 from machine import Pin
+
+from config import PIN_SW_1, PIN_SW_2
+from util import APIR, Clock, RPi_UART, SharedDict, Spool, i2c
 
 shared_dict = SharedDict()
 rpi_uart = RPi_UART(shared_dict, i2c=i2c)

@@ -1,0 +1,43 @@
+# Static checks for the MicroPython source in src/.
+#
+# Ruff does not resolve imports, so MicroPython built-ins (machine, deflate,
+# _thread) never show up here as missing modules. The flip side is that it
+# cannot tell you a module does not exist at all, nor that you called a method
+# that an imported class does not have -- pyright does both, see
+# pyrightconfig.json.
+
+src = ["src"]
+
+# Vendored third-party drivers -- not ours to lint.
+exclude = [
+    "src/pcf8563.py",
+    "src/ina219.py",
+    "src/logging.py",
+    "src/datetime.py",
+    "src/timezone.py",
+]
+
+# MicroPython implements roughly the Python 3.7 syntax subset.
+target-version = "py37"
+
+# const() is injected by the MicroPython compiler rather than imported, so
+# pyflakes sees it as undefined in the vendored drivers.
+builtins = ["const"]
+
+[lint]
+select = [
+    "F",   # pyflakes: undefined names, unused/duplicate imports, unused locals
+    "E9",  # syntax and IO errors
+]
+
+[lint.per-file-ignores]
+# `from config import *` is deliberate in these files -- config.py is a flat
+# module of PIN_* constants. F403/F405 would fire on every one of them.
+"src/util.py" = ["F403", "F405"]
+"src/test.py" = ["F403", "F405"]
+
+# main.py runs the code*.py programs with exec() inside its own globals, so a
+# name imported here but unused *in main.py* may still be what a program relies
+# on at runtime. That makes F401 unreliable for this file specifically.
+"src/main.py" = ["F401", "F403", "F405"]
+"src/code*.py" = ["F403", "F405"]

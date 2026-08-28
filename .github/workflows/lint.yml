@@ -1,0 +1,29 @@
+name: Lint
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Ruff
+        run: ruff check src/
+
+      # compile-mpy copies main.py and code*.py verbatim instead of running them
+      # through mpy-cross, so nothing else syntax-checks them before they reach
+      # the device. This closes that gap.
+      - name: Syntax-check the files compile-mpy copies verbatim
+        run: python -m compileall -q src/main.py src/code*.py

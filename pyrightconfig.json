@@ -1,0 +1,16 @@
+{
+  "include": ["src"],
+  "exclude": [
+    "src/pcf8563.py",
+    "src/ina219.py",
+    "src/logging.py",
+    "src/datetime.py",
+    "src/timezone.py"
+  ],
+  "extraPaths": ["src"],
+  "stubPath": "typings",
+  "pythonVersion": "3.7",
+  "typeCheckingMode": "basic",
+  "reportMissingImports": "error",
+  "reportMissingModuleSource": "none"
+}

@@ -1,18 +1,30 @@
-from machine import Pin, I2C
-import machine
-from time import sleep
-import pcf8563
+import datetime
+import io
+import json
 import os
 import sys
-import io
-import datetime
-from util import *
+from time import sleep
+
+import machine
+from machine import I2C, Pin
+
+import pcf8563
 from config import *
-import json
+from util import (
+    Buzzer,
+    Clock,
+    Message,
+    RotaryEncoder,
+    RPi_UART,
+    error,
+    error_code,
+    error_exception,
+    reset,
+)
 
 machine.freq(48_000_000)
 
-i2c = I2C(id=I2C_BUS_ID, scl=Pin(PIN_SCL), sda=Pin(PIN_SDA))
+i2c = I2C(I2C_BUS_ID, scl=Pin(PIN_SCL), sda=Pin(PIN_SDA))
 
 buzzer = Buzzer()
 clock = Clock(i2c)
@@ -104,7 +116,7 @@ def uart_one_message(message: Message):
 
 def get_err_str(err):
     buf = io.StringIO()
-    sys.print_exception(err, buf)
+    sys.print_exception(err, buf)  # pyright: ignore[reportAttributeAccessIssue]
     return buf.getvalue()
 
 def save_error(err):
@@ -136,7 +148,7 @@ try:
     os.remove("error.json")
     print("Sending saved error")
     error(error_to_send["type"], error_to_send["payload"])
-except Exception as err:
+except Exception:
     pass
 
 # Check if the program file exists.

@@ -1,7 +1,7 @@
 # Program 9 will run through a reset, home, trigger, home cycle.
 
 import time
-from util import Spool, user_config
+from util import Spool, SharedDict, RPi_UART, i2c, user_config
 
 shared_dict = SharedDict()
 rpi_uart = RPi_UART(shared_dict, i2c=i2c)

@@ -5,7 +5,9 @@
 # A summary of PASS/FAIL/SKIP is printed at the end.
 
 import time
-from machine import I2C, UART, Pin, PWM, ADC
+
+from machine import ADC, I2C, PWM, UART, Pin
+
 from config import *
 
 MAX_U16 = 65535
@@ -159,7 +161,7 @@ def test_motor():
     # The INA219 is needed to report motor current, fail if it can't be found.
     try:
         from ina219 import INA219
-        i2c = I2C(id=I2C_BUS_ID, scl=Pin(PIN_SCL), sda=Pin(PIN_SDA))
+        i2c = I2C(I2C_BUS_ID, scl=Pin(PIN_SCL), sda=Pin(PIN_SDA))
         ina = INA219(SHUNT_OHMS, i2c)
         ina.configure(gain=INA219.GAIN_8_320MV)
     except Exception as e:
@@ -193,7 +195,7 @@ def test_motor():
 # Test I2C
 def test_i2c():
     # Check RTC, EEPROM and current sensor can be found on the I2C bus
-    i2c = I2C(id=I2C_BUS_ID, scl=Pin(PIN_SCL), sda=Pin(PIN_SDA))
+    i2c = I2C(I2C_BUS_ID, scl=Pin(PIN_SCL), sda=Pin(PIN_SDA))
     found = i2c.scan()
     print("I2C scan found: {}".format([hex(a) for a in found]))
     all_found = True

@@ -1,19 +1,19 @@
-import pcf8563
-import timezone
-import datetime
-import machine
-from machine import I2C, UART, Pin, PWM, ADC, reset
-from config import *
-import time
 import _thread
+import binascii
+import datetime
+import hashlib
 import io
-import sys
 import json
 import os
+import sys
+import time
+
 import deflate
-import io
-import hashlib
-import binascii
+from machine import ADC, I2C, PWM, UART, Pin, reset
+
+import pcf8563
+import timezone
+from config import *
 from ina219 import INA219
 
 MAX_U16 = 65535
@@ -26,7 +26,7 @@ sw_or = "or"
 
 user_config = UserConfig()
 
-i2c = I2C(id=I2C_BUS_ID, scl=Pin(PIN_SCL), sda=Pin(PIN_SDA))
+i2c = I2C(I2C_BUS_ID, scl=Pin(PIN_SCL), sda=Pin(PIN_SDA))
 
 class Spool:
     def __init__(self, rpi_uart=None):
@@ -184,7 +184,7 @@ class Spool:
             self.rpi_uart.send_message(Message(0, "SPOOL_RESET"))
         print("Finished reset sequence =================")
 
-    def move_to_reset(self, timeout=15, timeout_error=True):
+    def move_to_reset(self, timeout: float = 15, timeout_error=True):
         print("Moving to reset")
         if self.at_reset():
             print("Already at reset")
@@ -411,7 +411,7 @@ class Clock:
     def is_night(self):
         utc = self.get_utc_time()
         local_time = self.get_local_time(utc)
-        tz = self.nz_tz.get_current_tz(utc).timezone
+        tz = self.nz_tz.get_current_tz(utc).timezone  # pyright: ignore[reportOptionalMemberAccess]
         sunrise = timezone.get_sunrise(utc, user_config.latitude, user_config.longitude, tz)
         sunset = timezone.get_sunset(utc, user_config.latitude, user_config.longitude, tz)
         return local_time.time() < sunrise or sunset < local_time.time()
@@ -431,28 +431,28 @@ class Clock:
     def check_low_voltage(self):
         return self.r.check_low_voltage()
 
-class PIRs:
-    def __init__(self, i2c=i2c):
-        self.i2c = i2c
-        self.pir_1 = Pin(PIN_PIR_1, Pin.IN)
-        self.pir_2 = Pin(PIN_PIR_2, Pin.IN)
-        self.set_pir_sensitivity(PIR_SENSITIVITY)
+# class PIRs:
+#     def __init__(self, i2c=i2c):
+#         self.i2c = i2c
+#         self.pir_1 = Pin(PIN_PIR_1, Pin.IN)
+#         self.pir_2 = Pin(PIN_PIR_2, Pin.IN)
+#         self.set_pir_sensitivity(PIR_SENSITIVITY)
 
-    def read(self):
-        return self.pir_1.value() or self.pir_2.value()
+#     def read(self):
+#         return self.pir_1.value() or self.pir_2.value()
 
-    def read_sensitivity(self):
-        return self.pir_sensitivity.read()
+#     def read_sensitivity(self):
+#         return self.pir_sensitivity.read()
 
-    def set_pir_sensitivity(self, value):
-        value = 127 - value
-        bytearray(0) + bytearray([value])
-        if value >= 128:
-            value = 128
-        if value < 0:
-            value = 0
-        # Writing to a programmable POT as a way to set the sensitivity for the PIRs
-        self.i2c.writeto(0x3E, bytes([0, value]))
+#     def set_pir_sensitivity(self, value):
+#         value = 127 - value
+#         bytearray(0) + bytearray([value])
+#         if value >= 128:
+#             value = 128
+#         if value < 0:
+#             value = 0
+#         # Writing to a programmable POT as a way to set the sensitivity for the PIRs
+#         self.i2c.writeto(0x3E, bytes([0, value]))
 
 class RPi_UART:
     def __init__(self, shared_dict, i2c = None):
@@ -528,7 +528,7 @@ class RPi_UART:
                     clock = Clock(self.i2c)
                     utc_time = clock.get_utc_time().isoformat()
                     local_time = clock.get_local_time().isoformat()
-                    self.send_message(Message(message.id, "READ_TIME_R", {"UTC": utc_time, "Local": local_time}))
+                    self.send_message(DictMessage(message.id, "READ_TIME_R", {"UTC": utc_time, "Local": local_time}))
 
                 elif message.type == "WRITE_TIME":
                     if self.i2c is None:
@@ -589,7 +589,7 @@ class RPi_UART:
                         # Stream decompress directly to the destination
                         with open(bin_src, "rb") as f_in, open(dst, "wb") as f_out:
                             try:
-                                with deflate.DeflateIO(f_in, deflate.RAW, 8) as d:
+                                with deflate.DeflateIO(f_in, deflate.RAW, 8) as d:  # pyright: ignore[reportGeneralTypeIssues]
                                     while True:
                                         chunk = d.read(256)
                                         if not chunk:
@@ -654,7 +654,8 @@ class RPi_UART:
                 char = self.uart.read(1)
                 if char == b"\n":
                     break
-                line_raw.extend(char)
+                if char != None:
+                    line_raw.extend(char)
         try:
             line = line_raw.decode('utf-8')
         except:
@@ -683,7 +684,7 @@ class RPi_UART:
         # Check that we get the message in the correct format "<id|type|payload>"
         if not message_str.startswith('<') or message_str.count('|') < 2 or not message_str.endswith('>'):
             print(f"Invalid message format {message_str}")
-            self.send_nack("Invalid message format")
+            self.send_nack(payload="Invalid message format")
             return None
         
         message_str = message_str[1:-1] # Remove the < and >
@@ -727,6 +728,12 @@ class Message():
         self.type = type
         self.payload = payload
         print("New message, id: {}, type: {}, payload: {}".format(self.id, self.type, self.payload))
+
+class DictMessage(Message):
+    # A Message whose payload is a dict. The wire format only carries strings,
+    # so the dict is JSON encoded here rather than at each call site.
+    def __init__(self, id, type, payload: dict):
+        super().__init__(id, type, json.dumps(payload))
 
 def motion_message():
     return Message(0, "MOTION")
@@ -983,12 +990,12 @@ def error_code(code, extra=None):
 
 def get_err_str(exception):
     buf = io.StringIO()
-    sys.print_exception(exception, buf)
+    sys.print_exception(exception, buf)  # pyright: ignore[reportAttributeAccessIssue]
     return buf.getvalue()
 
 def error_exception(exception):
     buf = io.StringIO()
-    sys.print_exception(exception, buf)
+    sys.print_exception(exception, buf)  # pyright: ignore[reportAttributeAccessIssue]
     exception_str = get_err_str(exception)
     print("EXCEPTION:", exception_str)
     error("EXCEPTION", exception_str.splitlines())
@@ -1012,8 +1019,8 @@ def error(type, payload, rpi_uart=None):
 
 def get_file_hashes(target_files=None):
     files = {}
-    for entry in os.ilistdir("/"):
-        name, size = entry[0], entry[3]
+    for entry in os.ilistdir("/"):  # pyright: ignore[reportAttributeAccessIssue]
+        name = entry[0]
         if target_files and name not in target_files:
             continue
         h = hashlib.sha256()

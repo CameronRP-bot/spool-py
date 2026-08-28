@@ -1,0 +1,24 @@
+{
+  // This project is edited in VSCodium / Code - OSS, where Pylance is not
+  // available (it is Microsoft-licensed and not published to Open VSX).
+  // basedpyright is an open-source pyright fork that provides the same
+  // diagnostics. Install both from the Open VSX marketplace:
+  //   detachhead.basedpyright   -- type/attribute/import checking
+  //   charliermarsh.ruff        -- fast lint on save
+  "python.languageServer": "None",
+
+  // Analysis options live in pyrightconfig.json at the repo root so the CLI
+  // and the editor stay in sync. Only editor-specific bits belong here.
+  "basedpyright.analysis.diagnosticSeverityOverrides": {
+    "reportMissingImports": "error",
+    "reportAttributeAccessIssue": "error"
+  },
+
+  "ruff.configuration": "./ruff.toml",
+
+  "[python]": {
+    "editor.codeActionsOnSave": {
+      "source.organizeImports.ruff": "explicit"
+    }
+  }
+}
