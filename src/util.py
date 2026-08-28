@@ -574,6 +574,19 @@ class RPi_UART:
                     os.remove(filename)
                     self.send_ack(message.id)
 
+                elif message.type == "DELETE_TMP":
+                    # Discard a half finished transfer: the counterpart of COMMIT,
+                    # which renames the same files instead of deleting them.
+                    try:
+                        for f in os.listdir():
+                            if f.endswith(".tmp"):
+                                print("Deleting", f)
+                                os.remove(f)
+                        self.send_ack(message.id)
+                    except Exception as e:
+                        print("DELETE_TMP failed:", e)
+                        self.send_nack(message.id)
+
                 elif message.type == "DECOMPRESS":
                     parts = message.payload.split(",")
                     src = parts[0]
