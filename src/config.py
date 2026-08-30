@@ -94,6 +94,7 @@ class UserConfig():
         self.motion_message_gap = 10
         self.post_reset_cooldown_seconds = 1
         self.spool_reed_check = False
+        self.manual_mode_timeout_minutes = 30
         self.program = 1
 
         self._load_user_config()

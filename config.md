@@ -52,6 +52,13 @@ Seconds to wait after the spool resets before running trap checks. The reset mot
 
 Set to `true` if a reed sensor is wired up to detect when the spool is in the reset position. Default: `false`
 
+## `manual_mode_timeout_minutes`
+
+When a request to release or reset the spool comes in over UART the trap stops running its
+sequence and goes into manual mode, where it only does what it is asked to. If no request is
+made for this long it restarts itself and carries on with its sequence, so a trap is not left
+disarmed. Set to `0` to stay in manual mode until the trap is restarted. Default: `30`
+
 ## `program`
 
 If the program select swithc is set to 0, the trap will instead run this program.

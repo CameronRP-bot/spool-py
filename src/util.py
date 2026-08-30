@@ -220,6 +220,19 @@ class Spool:
 
         return True
 
+    def _check_manual_mode(self):
+        # Raise ManualMode if a request has come in over UART. The spool is stopped
+        # first, as the sequence is unwound from wherever it is up to and would
+        # otherwise leave the motor driving.
+        if self.rpi_uart is None:
+            return
+        try:
+            check_manual_mode(self.rpi_uart.shared_dict)
+        except ManualMode:
+            self.stop()
+            self.ina219.sleep()
+            raise
+
     def _wait_to_stop_spool(self, checker_function, timeout, error_on_timeout, reed_check=False):
         start_time = time.time()
         self.ina219.wake()
@@ -244,6 +257,9 @@ class Spool:
                     error_code(ERROR_MOVEMENT_TIMEOUT)
                 self.ina219.sleep()
                 return False
+
+            # Check if we have been asked to take manual control of the trap.
+            self._check_manual_mode()
             
             # Check reed switch
             if reed_check:
@@ -501,8 +517,18 @@ class RPi_UART:
                     else:
                         self.send_bad_key(message.id)
 
+                elif message.type in ("RELEASE_SPOOL", "RESET_SPOOL"):
+                    # Only record the request. It is run by the main thread, which puts
+                    # the trap into manual mode. The ACK means the request was accepted,
+                    # not that it has finished, the SPOOL_RESET/TRIGGERED messages report
+                    # that. Programs opt in to manual control by seeding the "request" key.
+                    if self.shared_dict is not None and self.shared_dict.set("request", message.type):
+                        self.send_ack(message.id)
+                    else:
+                        self.send_bad_key(message.id)
+
                 elif message.type == "RESTART":
-                    print("Restarting...")
+                    print("Restarting..")
                     self.send_ack(message.id)
                     time.sleep(1)
                     reset()
@@ -871,6 +897,34 @@ class APIR():
         # Return if there was motion
         return self.displacement_triggered or self.gradient_triggered
   
+class ManualMode(Exception):
+    """Raised when a request to control the trap has come in over UART.
+
+    Requests are only recorded by the UART thread, never acted on there, as the spool
+    must only be driven from the main thread. Raising from the sequence unwinds it to
+    a single handler in run_sequence, so no part of the sequence has to know what to
+    do with a request. See manual_mode().
+    """
+    pass
+
+
+def check_manual_mode(shared_dict):
+    # Raise ManualMode if a request is waiting to be handled.
+    if shared_dict is not None and shared_dict.get("request") is not None:
+        raise ManualMode()
+
+
+def sleep_checking_manual_mode(seconds, shared_dict, slice_seconds=0.5):
+    # time.sleep, but in slices, so a request doesn't have to wait out the full sleep.
+    end = time.time() + seconds
+    while True:
+        remaining = end - time.time()
+        if remaining <= 0:
+            return
+        check_manual_mode(shared_dict)
+        time.sleep(min(slice_seconds, remaining))
+
+
 def check_checks(enable_checks):
     failed_reasons = []
     all_passed = True
@@ -897,12 +951,28 @@ def run_sequence(
     rpi_uart=None,
     apir=None
     ):
+    shared_dict = rpi_uart.shared_dict if rpi_uart is not None else None
+    try:
+        _run_sequence(spool, motion_check, enabled_checks, shared_dict, rpi_uart, apir)
+    except ManualMode:
+        # A request came in over UART. Hand the trap over to manual mode, which doesn't
+        # return, so the sequence is abandoned rather than resumed part way through.
+        manual_mode(spool, shared_dict, rpi_uart=rpi_uart)
+
+def _run_sequence(
+    spool: Spool,
+    motion_check,
+    enabled_checks,
+    shared_dict,
+    rpi_uart=None,
+    apir=None
+    ):
     while True:
         # Step 1: Reset spool
         print("Resetting spool.")
         spool.reset_sequence()
         print(f"Waiting {user_config.post_reset_cooldown_seconds}s until running trap checks.")
-        time.sleep(user_config.post_reset_cooldown_seconds)
+        sleep_checking_manual_mode(user_config.post_reset_cooldown_seconds, shared_dict)
 
         # Step 2: Wait for motion check and all enable checks to pass.
         print("Waiting for motion check and all enable checks to pass.")
@@ -915,6 +985,9 @@ def run_sequence(
         apir_min = float('inf')
         apir_max = 0
         while True:
+            # Check if we have been asked to take manual control of the trap.
+            check_manual_mode(shared_dict)
+
             # Check for motion.
             motion = motion_check()
 
@@ -974,9 +1047,73 @@ def run_sequence(
 
         # Step 4: Wait for SPOOL_RESET_DELAY_MINUTES
         print(f"Waiting {user_config.spool_reset_delay_minutes} minutes until resetting.")
-        time.sleep(user_config.spool_reset_delay_minutes * 60)
+        sleep_checking_manual_mode(user_config.spool_reset_delay_minutes * 60, shared_dict)
 
         # Step 5: Back to step 1, resetting the spool
+
+# manual_mode takes over from the trap sequence when a request comes in over UART.
+# The sequence is not resumed: requests are served until the trap is restarted, either
+# by a RESTART message or by the manual mode timeout, both of which reboot back into
+# the program from a known state.
+def manual_mode(spool: Spool, shared_dict, rpi_uart=None):
+    # The sequence could have been unwound from anywhere, so put the spool in a known
+    # state before doing anything else.
+    spool.stop()
+
+    print("======== Entering manual mode ========")
+    if rpi_uart:
+        rpi_uart.send_message(Message(0, "MANUAL_MODE"))
+
+    timeout = user_config.manual_mode_timeout_minutes * 60
+    last_request = time.time()
+
+    while True:
+        request = shared_dict.get("request")
+
+        if request is None:
+            # Reboot back into the sequence so the trap isn't left disarmed after
+            # someone has finished with it.
+            if timeout > 0 and time.time() - last_request > timeout:
+                print("No requests for {} minutes, restarting.".format(user_config.manual_mode_timeout_minutes))
+                if rpi_uart:
+                    rpi_uart.send_message(Message(0, "MANUAL_MODE_TIMEOUT"))
+                    time.sleep(1)
+                reset()
+            time.sleep(0.1)
+            continue
+
+        # Clear the request before running it so a new request coming in while it runs
+        # is not lost, and so it doesn't get run twice.
+        shared_dict.set("request", None)
+        last_request = time.time()
+        print("Manual request: " + str(request))
+
+        try:
+            if request == "RELEASE_SPOOL":
+                if not spool.release():
+                    manual_error(rpi_uart, "spool is not at home so it can't be released")
+            elif request == "RESET_SPOOL":
+                spool.reset_sequence()
+            else:
+                manual_error(rpi_uart, "unknown request " + str(request))
+        except ManualMode:
+            # A new request came in while running this one. Stop what we are doing and
+            # pick the new request up on the next time around.
+            print("Request interrupted by a new request.")
+            spool.stop()
+        except Exception as e:
+            print(get_err_str(e))
+            manual_error(rpi_uart, get_err_str(e))
+            spool.stop()
+
+def manual_error(rpi_uart, reason):
+    # Report a request that couldn't be run. Not using error(), as that reboots the trap
+    # and a failed request should leave it in manual mode.
+    # Messages are a single line, so a multi line reason (a traceback) has to be flattened.
+    reason = str(reason).replace("\n", " ")
+    print("Manual request failed: " + reason)
+    if rpi_uart:
+        rpi_uart.send_message(Message(0, "MANUAL_ERROR", reason))
 
 def error_code(code, extra=None):
     print(f"ERROR_CODE: {code}")

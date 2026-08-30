@@ -13,6 +13,7 @@ machine.freq(48_000_000)
 shared_dict = SharedDict()
 rpi_uart = RPi_UART(shared_dict, i2c=i2c)
 shared_dict.set("enable", False, new_key=True)
+shared_dict.set("request", None, new_key=True)  # Allows manual control of the trap over UART
 spool = Spool(rpi_uart=rpi_uart)
 apir = APIR()
 clock = Clock()

@@ -5,6 +5,7 @@ from util import *
 shared_dict = SharedDict()
 rpi_uart = RPi_UART(shared_dict, i2c=i2c)
 spool = Spool(rpi_uart=rpi_uart)
+shared_dict.set("request", None, new_key=True)  # Allows manual control of the trap over UART
 apir = APIR()
 clock = Clock()
 switches = Switches()
