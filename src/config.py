@@ -48,7 +48,7 @@ PIN_SW_2 = 5
 # Spool reed switch pin
 PIN_SPOOL_RESET = 6
 
-# Spool pins
+# Servo pins
 PIN_EN_6V = 18
 PIN_SERVO_1 = 19
 PIN_SERVO_2 = 20
@@ -60,11 +60,11 @@ PIN_GPIO_EXTRA = 23
 SHUNT_OHMS = 0.1
 
 # Ratchet Door Servo
-RATCHET_CYCLES = 10 # How many times to ratchet the door to open it fully
-SERVO_DOOR_DOWN_RATCHET = 1700 # Down ratchet position
-SERVO_DOOR_UP_RATCHET = 1200 # Up ratchet position
-SERVO_DOOR_HOLD = 1300 # Hold position (ready to release)
-SERVO_DOOR_RELEASE = 1050 # Release the door
+RATCHET_CYCLES = 8 # How many times to ratchet the door to open it fully
+SERVO_DOOR_DOWN_RATCHET = 600 # Down ratchet position
+SERVO_DOOR_UP_RATCHET = 1500 # Up ratchet position
+SERVO_DOOR_HOLD = 1700 # Hold position (ready to release)
+SERVO_DOOR_RELEASE = 2000 # Release the door
 
 # Error codes
 ERROR_TIME_NOT_SET = 3

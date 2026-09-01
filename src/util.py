@@ -470,8 +470,44 @@ class Clock:
 #         # Writing to a programmable POT as a way to set the sensitivity for the PIRs
 #         self.i2c.writeto(0x3E, bytes([0, value]))
 
+class SharedDict:
+    def __init__(self):
+        self._data = {}
+        self._lock = _thread.allocate_lock()
+
+    def get(self, key, default=None):
+        self._lock.acquire()
+        try:
+            return self._data.get(key, default)
+        finally:
+            self._lock.release()
+
+    def set(self, key, value, new_key=False):
+        self._lock.acquire()
+        try:
+            if key not in self._data and not new_key:
+                return False
+            self._data[key] = value
+            return True
+        finally:
+            self._lock.release()
+
+
+    def contains(self, key):
+        self._lock.acquire()
+        try:
+            return key in self._data
+        finally:
+            self._lock.release()
+
+    def enable_check(self):
+        if self.get("enable", default=False):
+            return True, "Camera set trap to enabled"
+        else:
+            return False, "Camera set trap to disabled"
+
 class RPi_UART:
-    def __init__(self, shared_dict, i2c = None):
+    def __init__(self, shared_dict: SharedDict, i2c = None):
         self.shared_dict = shared_dict
         self._running = True
         self.uart = UART(0, baudrate=9600, tx=Pin(PIN_UART_TX_IN), rx=Pin(PIN_UART_RX_IN))
@@ -517,11 +553,19 @@ class RPi_UART:
                     else:
                         self.send_bad_key(message.id)
 
-                elif message.type in ("RELEASE_SPOOL", "RESET_SPOOL"):
+                elif message.type in (
+                    "RELEASE_SPOOL",
+                    "RESET_SPOOL",
+                    "OPEN_DOOR_1",
+                    "CLOSE_DOOR_1",
+                    "OPEN_DOOR_2",
+                    "CLOSE_DOOR_2",
+                ):
                     # Only record the request. It is run by the main thread, which puts
                     # the trap into manual mode. The ACK means the request was accepted,
-                    # not that it has finished, the SPOOL_RESET/TRIGGERED messages report
-                    # that. Programs opt in to manual control by seeding the "request" key.
+                    # not that it has finished, the SPOOL_RESET/TRIGGERED and
+                    # DOOR_OPENED/DOOR_CLOSED messages report that. Programs opt in to
+                    # manual control by seeding the "request" key.
                     if self.shared_dict is not None and self.shared_dict.set("request", message.type):
                         self.send_ack(message.id)
                     else:
@@ -778,11 +822,16 @@ def motion_message():
     return Message(0, "MOTION")
 
 class RatchetDoor():
-    def __init__(self, pin):
+    # NOTE: Both doors share the one PIN_EN_6V rail, so only ever move one at a time.
+    # Manual mode serves a single request at a time, and each move powers the rail down
+    # before returning, so the two doors never contend for it.
+    def __init__(self, pin, number, rpi_uart=None):
+        self.number = number
         self.en_6v = Pin(PIN_EN_6V, Pin.OUT)
         self.en_6v.off()
         self.servo = PWM(Pin(pin), freq=50)
         self.servo.duty_u16(0)
+        self.rpi_uart = rpi_uart
 
     def _move_to(self, pulse_us):
         self.servo.duty_u16(int(pulse_us / 20_000 * MAX_U16))
@@ -795,23 +844,37 @@ class RatchetDoor():
         self.servo.duty_u16(0)
         self.en_6v.off()
 
+    # reset() is the "open" movement: it ratchets the door up and holds it there.
     def reset(self):
-        print("Running ratchet door reset")
+        print("Opening ratchet door", self.number)
         self._power_on()
         try:
+            # Move the servo up and down to ratchet the door open
             for _ in range(RATCHET_CYCLES):
                 self._move_to(SERVO_DOOR_DOWN_RATCHET)
-                time.sleep(0.6)
+                time.sleep(1)
                 self._move_to(SERVO_DOOR_UP_RATCHET)
-                time.sleep(0.6)
+                time.sleep(1)
+
+            # Slowly move to the hold positions to prevent a accidental release
+            steps = 100
+            for i in range(steps):
+                time.sleep_ms(20)
+                position = SERVO_DOOR_UP_RATCHET + (SERVO_DOOR_HOLD - SERVO_DOOR_UP_RATCHET) * i / steps
+                self._move_to(position)
             self._move_to(SERVO_DOOR_HOLD)
             time.sleep(0.6)
         finally:
             self._power_off()
-        print("Finished ratchet door reset")
 
+        # Make event that the door has been opened
+        if self.rpi_uart is not None:
+            self.rpi_uart.send_message(Message(0, "DOOR_OPENED", str(self.number)))
+        print("Finished opening ratchet door", self.number)
+
+    # release() is the "close" movement: it lets the ratchet go and the door drops.
     def release(self):
-        print("Releasing ratchet door")
+        print("Closing ratchet door", self.number)
         self._power_on()
         try:
             self._move_to(SERVO_DOOR_RELEASE)
@@ -821,41 +884,10 @@ class RatchetDoor():
         finally:
             self._power_off()
 
-class SharedDict:
-    def __init__(self):
-        self._data = {}
-        self._lock = _thread.allocate_lock()
-
-    def get(self, key, default=None):
-        self._lock.acquire()
-        try:
-            return self._data.get(key, default)
-        finally:
-            self._lock.release()
-
-    def set(self, key, value, new_key=False):
-        self._lock.acquire()
-        try:
-            if key not in self._data and not new_key:
-                return False
-            self._data[key] = value
-            return True
-        finally:
-            self._lock.release()
-
-
-    def contains(self, key):
-        self._lock.acquire()
-        try:
-            return key in self._data
-        finally:
-            self._lock.release()
-
-    def enable_check(self):
-        if self.get("enable", default=False):
-            return True, "Camera set trap to enabled"
-        else:
-            return False, "Camera set trap to disabled"
+        # Make event that the door has been closed
+        if self.rpi_uart is not None:
+            self.rpi_uart.send_message(Message(0, "DOOR_CLOSED", str(self.number)))
+        print("Finished closing ratchet door", self.number)
 
 class APIR():
     def __init__(self):
@@ -1060,6 +1092,16 @@ def manual_mode(spool: Spool, shared_dict, rpi_uart=None):
     # state before doing anything else.
     spool.stop()
 
+    # Doors are built the first time one is asked for, so a trap that never gets a door
+    # request doesn't claim the servo pins or the 6V enable.
+    doors = {}
+
+    def get_door(number):
+        if number not in doors:
+            pin = PIN_SERVO_1 if number == 1 else PIN_SERVO_2
+            doors[number] = RatchetDoor(pin, number, rpi_uart=rpi_uart)
+        return doors[number]
+
     print("======== Entering manual mode ========")
     if rpi_uart:
         rpi_uart.send_message(Message(0, "MANUAL_MODE"))
@@ -1094,6 +1136,17 @@ def manual_mode(spool: Spool, shared_dict, rpi_uart=None):
                     manual_error(rpi_uart, "spool is not at home so it can't be released")
             elif request == "RESET_SPOOL":
                 spool.reset_sequence()
+            elif request == "OPEN_DOOR_1":
+                # Ratchets the door up and holds it. This runs for RATCHET_CYCLES * ~2s,
+                # and is not interrupted by a new request, which waits in the shared
+                # dict until this returns.
+                get_door(1).reset()
+            elif request == "CLOSE_DOOR_1":
+                get_door(1).release()
+            elif request == "OPEN_DOOR_2":
+                get_door(2).reset()
+            elif request == "CLOSE_DOOR_2":
+                get_door(2).release()
             else:
                 manual_error(rpi_uart, "unknown request " + str(request))
         except ManualMode:
@@ -1156,7 +1209,7 @@ def error(type, payload, rpi_uart=None):
     try:
         # If not given a rpi_uart, try to create one
         if not rpi_uart:
-            rpi_uart = RPi_UART(None)
+            rpi_uart = RPi_UART(SharedDict())
         rpi_uart.send_message(message)
     except:
         print("Failed to send error via UART. Saving error to file")
