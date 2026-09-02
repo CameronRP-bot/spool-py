@@ -554,6 +554,7 @@ class RPi_UART:
                         self.send_bad_key(message.id)
 
                 elif message.type in (
+                    "STOP",
                     "RELEASE_SPOOL",
                     "RESET_SPOOL",
                     "OPEN_DOOR_1",
@@ -566,6 +567,8 @@ class RPi_UART:
                     # not that it has finished, the SPOOL_RESET/TRIGGERED and
                     # DOOR_OPENED/DOOR_CLOSED messages report that. Programs opt in to
                     # manual control by seeding the "request" key.
+                    # A request also interrupts one that is already running, which is how
+                    # STOP stops a spool or door that is part way through moving.
                     if self.shared_dict is not None and self.shared_dict.set("request", message.type):
                         self.send_ack(message.id)
                     else:
@@ -844,6 +847,22 @@ class RatchetDoor():
         self.servo.duty_u16(0)
         self.en_6v.off()
 
+    # stop cuts the power to the door, leaving it wherever it has got to.
+    def stop(self):
+        self._power_off()
+
+    def _shared_dict(self):
+        return self.rpi_uart.shared_dict if self.rpi_uart is not None else None
+
+    def _check_stop(self):
+        # Raise ManualMode if a request (a STOP, or anything else) is waiting, so a move
+        # that takes tens of seconds doesn't have to be waited out. The power off in the
+        # caller's finally block leaves the door where it stopped.
+        check_manual_mode(self._shared_dict())
+
+    def _sleep(self, seconds):
+        sleep_checking_manual_mode(seconds, self._shared_dict(), slice_seconds=0.1)
+
     # reset() is the "open" movement: it ratchets the door up and holds it there.
     def reset(self):
         print("Opening ratchet door", self.number)
@@ -851,19 +870,20 @@ class RatchetDoor():
         try:
             # Move the servo up and down to ratchet the door open
             for _ in range(RATCHET_CYCLES):
+                self._check_stop()
                 self._move_to(SERVO_DOOR_DOWN_RATCHET)
-                time.sleep(1)
+                self._sleep(1)
                 self._move_to(SERVO_DOOR_UP_RATCHET)
-                time.sleep(1)
+                self._sleep(1)
 
             # Slowly move to the hold positions to prevent a accidental release
             steps = 100
             for i in range(steps):
-                time.sleep_ms(20)
+                self._sleep(0.02)
                 position = SERVO_DOOR_UP_RATCHET + (SERVO_DOOR_HOLD - SERVO_DOOR_UP_RATCHET) * i / steps
                 self._move_to(position)
             self._move_to(SERVO_DOOR_HOLD)
-            time.sleep(0.6)
+            self._sleep(0.6)
         finally:
             self._power_off()
 
@@ -948,13 +968,17 @@ def check_manual_mode(shared_dict):
 
 def sleep_checking_manual_mode(seconds, shared_dict, slice_seconds=0.5):
     # time.sleep, but in slices, so a request doesn't have to wait out the full sleep.
-    end = time.time() + seconds
+    # Timed with ticks_ms as time.time() only has second resolution, which would make
+    # sleeps of a second or less either return straight away or run long.
+    total_ms = int(seconds * 1000)
+    slice_ms = max(1, int(slice_seconds * 1000))
+    start = time.ticks_ms()
     while True:
-        remaining = end - time.time()
-        if remaining <= 0:
+        remaining_ms = total_ms - time.ticks_diff(time.ticks_ms(), start)
+        if remaining_ms <= 0:
             return
         check_manual_mode(shared_dict)
-        time.sleep(min(slice_seconds, remaining))
+        time.sleep_ms(min(slice_ms, remaining_ms))
 
 
 def check_checks(enable_checks):
@@ -1102,6 +1126,13 @@ def manual_mode(spool: Spool, shared_dict, rpi_uart=None):
             doors[number] = RatchetDoor(pin, number, rpi_uart=rpi_uart)
         return doors[number]
 
+    def stop_all():
+        # Stop anything that could still be moving. Doors that have never been asked for
+        # are not built, so only the ones that exist need powering down.
+        spool.stop()
+        for door in doors.values():
+            door.stop()
+
     print("======== Entering manual mode ========")
     if rpi_uart:
         rpi_uart.send_message(Message(0, "MANUAL_MODE"))
@@ -1131,7 +1162,14 @@ def manual_mode(spool: Spool, shared_dict, rpi_uart=None):
         print("Manual request: " + str(request))
 
         try:
-            if request == "RELEASE_SPOOL":
+            if request == "STOP":
+                # Whatever was running has already stopped on its way out, as the request
+                # that interrupted it unwinds through a power off. This makes sure nothing
+                # is left driven, and covers a STOP that arrives while nothing is moving.
+                stop_all()
+                if rpi_uart:
+                    rpi_uart.send_message(Message(0, "STOPPED"))
+            elif request == "RELEASE_SPOOL":
                 if not spool.release():
                     manual_error(rpi_uart, "spool is not at home so it can't be released")
             elif request == "RESET_SPOOL":
@@ -1153,11 +1191,11 @@ def manual_mode(spool: Spool, shared_dict, rpi_uart=None):
             # A new request came in while running this one. Stop what we are doing and
             # pick the new request up on the next time around.
             print("Request interrupted by a new request.")
-            spool.stop()
+            stop_all()
         except Exception as e:
             print(get_err_str(e))
             manual_error(rpi_uart, get_err_str(e))
-            spool.stop()
+            stop_all()
 
 def manual_error(rpi_uart, reason):
     # Report a request that couldn't be run. Not using error(), as that reboots the trap
