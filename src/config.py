@@ -50,8 +50,8 @@ PIN_SPOOL_RESET = 6
 
 # Servo pins
 PIN_EN_6V = 18
-PIN_SERVO_1 = 19
-PIN_SERVO_2 = 20
+PIN_SERVO_1 = 19  # With a cage fitted: the cage door the spool opens onto
+PIN_SERVO_2 = 20  # With a cage fitted: the cage door out to the kill mechanism
 
 # Extra GPIO pin
 PIN_GPIO_EXTRA = 23
@@ -95,6 +95,10 @@ class UserConfig():
         self.post_reset_cooldown_seconds = 1
         self.spool_reed_check = False
         self.manual_mode_timeout_minutes = 30
+        self.cage_enabled = False
+        self.cage_entry_timeout_minutes = 60
+        self.cage_hold_hours = 24
+        self.cage_exit_wait_hours = 24
         self.program = 1
 
         self._load_user_config()

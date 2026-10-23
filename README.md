@@ -34,3 +34,11 @@ When the trap communicates with the camera it can send though messages that the 
 - trapTriggered: The trap has just triggered.
 - trapSpoolReset: The spool on the trap was reset
 - trapRunning: The program that is running on the trap.
+- Cage events, when `cage_enabled` is set (see config.md):
+  - trapCageNoEntry: The spool triggered but nothing was seen going into the cage.
+  - trapCageCaptured: An animal has been shut in the cage. `HoldHours` is how long until it is released.
+  - trapCageHolding: A hold command extended the hold by `HoldHours`.
+  - trapCageReleasing: The spool side door is opening to let the animal go. `Reason` is `command` or `timeout`.
+  - trapCageKilling: The door to the kill mechanism is opening.
+  - trapCageWaiting: A wait command extended the wait for the animal to leave by `WaitHours`.
+  - trapCageFinished: The animal has left the cage. `Action` is `RELEASE` or `KILL`, `Result` is `ESCAPED`, `KILLED` or `TIMEOUT`.

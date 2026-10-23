@@ -59,6 +59,35 @@ sequence and goes into manual mode, where it only does what it is asked to. If n
 made for this long it restarts itself and carries on with its sequence, so a trap is not left
 disarmed. Set to `0` to stay in manual mode until the trap is restarted. Default: `30`
 
+## `cage_enabled`
+
+Set to `true` when a holding cage is fitted to the spool. Servo 1 is the cage door the spool opens onto, servo 2 is the cage door out to the kill mechanism, and the external PIR watches the inside of the cage.
+
+The trap arms the cage by shutting door 2 and opening door 1. Once the spool triggers it waits for the external PIR to see the animal in the cage, shuts door 1 behind it, and waits to be told what to do over UART:
+
+- `CAGE_HOLD`: hold the animal for another `cage_hold_hours`.
+- `CAGE_RELEASE`: open door 1 so the animal can get out back through the spool, which is still released. This also happens if no command comes in for `cage_hold_hours`.
+- `CAGE_KILL`: open door 2 so the animal goes through to the kill mechanism.
+
+With a door open it then waits up to `cage_exit_wait_hours` for the animal to go:
+
+- `CAGE_WAIT`: wait another `cage_exit_wait_hours`.
+- `CAGE_ESCAPED` / `CAGE_KILLED`: the animal has gone.
+
+After that, or if nothing went into the cage, the cage is armed again and the spool reset. Nothing is saved, so if the trap restarts it forgets anything it was holding and arming the cage lets the animal out. A command sent when it doesn't apply (for example `CAGE_WAIT` while holding) gets a NACK saying why. Default: `false`
+
+## `cage_entry_timeout_minutes`
+
+After the spool triggers, how long to wait for the external PIR to see an animal in the cage before giving up and resetting the spool. Default: `60`
+
+## `cage_hold_hours`
+
+How long an animal is held in the cage before it is released, and how long a `CAGE_HOLD` extends that by (from when the command arrives). Default: `24`
+
+## `cage_exit_wait_hours`
+
+After a release or kill, how long to wait for the animal to leave the cage before carrying on, and how long a `CAGE_WAIT` extends that by. Default: `24`
+
 ## `program`
 
 If the program select swithc is set to 0, the trap will instead run this program.
