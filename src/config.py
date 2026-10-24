@@ -75,6 +75,11 @@ ERROR_OVER_CURRENT = 7
 ERROR_RUNTIME_ERROR = 8
 ERROR_SPOOL_NOT_RELEASING = 9
 
+# How long an ENABLE from the camera lasts if it doesn't say. The camera keeps sending ENABLE
+# while it wants the trap enabled, so the trap disables itself if the camera powers off or
+# is unplugged.
+DEFAULT_ENABLE_SECONDS = 300
+
 # This is used so when resetting the first time it knows how long each "step" should be.
 HOME_TO_RESET_DURATION = 13
 

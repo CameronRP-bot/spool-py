@@ -511,11 +511,14 @@ class SharedDict:
         finally:
             self._lock.release()
 
+    # "enable" is False, or the time.time() until which the camera has enabled the trap.
     def enable_check(self):
-        if self.get("enable", default=False):
-            return True, "Camera set trap to enabled"
-        else:
+        enabled_until = self.get("enable", default=False)
+        if not enabled_until:
             return False, "Camera set trap to disabled"
+        if time.time() >= enabled_until:
+            return False, "Camera stopped enabling the trap"
+        return True, "Camera set trap to enabled"
 
 class RPi_UART:
     def __init__(self, shared_dict: SharedDict, i2c = None):
@@ -551,8 +554,16 @@ class RPi_UART:
                     continue
 
                 elif message.type == "ENABLE":
-                    # We will write to the shared dict to set enable to true.
-                    if self.shared_dict.set("enable", True):
+                    # The camera enables the trap for the number of seconds in the payload,
+                    # or DEFAULT_ENABLE_SECONDS if there isn't one, and keeps sending ENABLE
+                    # while it wants the trap enabled. If it stops, such as when it is
+                    # powered off or unplugged, the trap disables itself.
+                    try:
+                        seconds = int(message.payload) if message.payload else DEFAULT_ENABLE_SECONDS
+                    except ValueError:
+                        self.send_nack(message.id, "ENABLE payload must be a number of seconds")
+                        continue
+                    if self.shared_dict.set("enable", time.time() + seconds):
                         self.send_ack(message.id)
                     else:
                         self.send_bad_key(message.id)
