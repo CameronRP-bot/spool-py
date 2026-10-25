@@ -33,6 +33,7 @@ When the trap communicates with the camera it can send though messages that the 
   - runtime-error: An python runtime error occurred.
 - trapTriggered: The trap has just triggered.
 - trapSpoolReset: The spool on the trap was reset
+- trapSpoolResetFailed: With `spool_reed_check` set, the reed switch showed that the spool didn't stay reset. The trap doesn't try again, so it can't trigger until it is asked to reset the spool (a manual RESET_SPOOL) or is restarted. `Reason` says what went wrong.
 - trapRunning: The program that is running on the trap.
 - Cage events, when `cage_enabled` is set (see config.md):
   - trapCageNoEntry: The spool triggered but nothing was seen going into the cage.

@@ -138,9 +138,11 @@ class Spool:
         # When the spool is reset the reed switch will be close pulling the pin low
         return self.spool_reset_pin.value() == 0
 
+    # Returns False if the reed switch (spool_reed_check) shows that the spool didn't stay
+    # reset, after reporting it to the camera with a SPOOL_RESET_FAILED message.
     def reset_sequence(self, steps=4):
         print("======== Running reset sequence ========")
-        
+
         # Stop and then move to home to start the reset sequence.
         self.stop()
         time.sleep(0.5)
@@ -150,7 +152,7 @@ class Spool:
         # Check if the spool is already reset.
         if user_config.spool_reed_check and self.spool_is_reset():
             print("Spool already reset")
-            return
+            return True
 
         # For the reset sequence rather than making it move directly to reset we make multiple 
         # "steps", each time returning back to home and then moving further next time.
@@ -173,16 +175,23 @@ class Spool:
         # Move back to home and check if the reed switch shows that it didn't latch properly.
         print("Moving to home, checking the spool stays reset.")
         self._drive_ccw()
-        self._wait_to_stop_spool(
+        stayed_reset = self._wait_to_stop_spool(
             self.at_home, # Check if it has got to the target
             self.home_to_reset_duration+5, # Give it 5 more seconds than expected in case it is a bit slow for some reason
             True, # Error if it takes longer than expected
             reed_check=user_config.spool_reed_check) # Check reed switch if configured to do so.
+        if user_config.spool_reed_check and not (stayed_reset and self.spool_is_reset()):
+            print("Spool didn't stay reset.")
+            if self.rpi_uart is not None:
+                self.rpi_uart.send_message(DictMessage(0, "SPOOL_RESET_FAILED", {"Reason": "The reed switch shows the spool didn't stay reset"}))
+            print("Failed reset sequence ===================")
+            return False
 
         # Make event that the trap has been released
         if self.rpi_uart is not None:
             self.rpi_uart.send_message(Message(0, "SPOOL_RESET"))
         print("Finished reset sequence =================")
+        return True
 
     def move_to_reset(self, timeout: float = 15, timeout_error=True):
         print("Moving to reset")
@@ -264,10 +273,10 @@ class Spool:
             # Check reed switch
             if reed_check:
                 # We want to check that spool is staying reset.
+                # Not using error_code, as that reboots the trap. The caller reports it.
                 if not self.spool_is_reset():
                     print("Spool didn't reset properly.")
                     self.stop()
-                    error_code(ERROR_FAILED_TO_RESET)
                     self.ina219.sleep()
                     return False
 
@@ -1244,7 +1253,12 @@ def _run_sequence(
         if cage is not None:
             cage.arm()
         print("Resetting spool.")
-        spool.reset_sequence()
+        if not spool.reset_sequence():
+            # The spool isn't armed, so there is no point waiting for motion, and it isn't
+            # tried again. Wait for a manual request (e.g. RESET_SPOOL) or a restart.
+            print("Spool reset failed, not trying again until asked to or restarted.")
+            while True:
+                sleep_checking_manual_mode(60, shared_dict)
         print(f"Waiting {user_config.post_reset_cooldown_seconds}s until running trap checks.")
         sleep_checking_manual_mode(user_config.post_reset_cooldown_seconds, shared_dict)
 

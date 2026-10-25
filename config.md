@@ -50,7 +50,7 @@ Seconds to wait after the spool resets before running trap checks. The reset mot
 
 ## `spool_reed_check`
 
-Set to `true` if a reed sensor is wired up to detect when the spool is in the reset position. Default: `false`
+Set to `true` if a reed sensor is wired up to detect when the spool is in the reset position. If the reed switch shows the spool didn't stay reset, the trap sends a `SPOOL_RESET_FAILED` message to the camera (a `trapSpoolResetFailed` event) and stops there without trying again, until it is asked to reset the spool or is restarted. Default: `false`
 
 ## `manual_mode_timeout_minutes`
 
