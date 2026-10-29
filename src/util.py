@@ -535,6 +535,8 @@ class RPi_UART:
         self._running = True
         self.uart = UART(0, baudrate=9600, tx=Pin(PIN_UART_TX_IN), rx=Pin(PIN_UART_RX_IN))
         self.i2c = i2c
+        self._status_checked = time.ticks_add(time.ticks_ms(), -STATUS_PUSH_MS)
+        self._status_pushed = None
         _thread.start_new_thread(self._uart_loop, ())
 
     def close(self):
@@ -544,6 +546,8 @@ class RPi_UART:
     def _uart_loop(self):
         while self._running:
             try:
+                self._push_status()
+
                 # Get a new message
                 message = self.check_for_message()
 
@@ -583,6 +587,13 @@ class RPi_UART:
                         self.send_ack(message.id)
                     else:
                         self.send_bad_key(message.id)
+
+                elif message.type == "STATUS":
+                    # Answered here from what the main thread keeps in "status" (see
+                    # set_status), so it works even while the main thread is busy moving
+                    # the spool or a door. Programs that don't run the trap sequence only
+                    # report their uptime.
+                    self.send_message(DictMessage(message.id, "STATUS_R", status_reply(self.shared_dict)))
 
                 elif message.type in (
                     "STOP",
@@ -773,6 +784,22 @@ class RPi_UART:
 
             except Exception as e:
                 print(get_err_str(e))
+
+    # _push_status sends the trap's status (see set_status) to the camera when it changes,
+    # checking at most every STATUS_PUSH_MS so changes close together go as one message.
+    # The camera can also ask for it at any time with STATUS.
+    def _push_status(self):
+        if self.shared_dict is None or time.ticks_diff(time.ticks_ms(), self._status_checked) < STATUS_PUSH_MS:
+            return
+        self._status_checked = time.ticks_ms()
+        if self.shared_dict.get("status") is None:
+            return
+        # This also catches the camera's ENABLE running out, as CameraEnabled changes.
+        reply = status_reply(self.shared_dict)
+        if reply == self._status_pushed:
+            return
+        self._status_pushed = reply
+        self.send_message(DictMessage(0, "STATUS_CHANGED", reply))
 
     def check_for_message(self):
         # Check to see if there is any data in the UART buffer, if not return None
@@ -1126,6 +1153,7 @@ class Cage():
         self.shared_dict.set("cage_phase", phase)
         # Anything accepted for the phase being left no longer applies.
         self.shared_dict.set("cage_command", None)
+        set_status(self.shared_dict, CagePhase=phase)
 
     def _send(self, type, payload):
         if self.rpi_uart is not None:
@@ -1213,6 +1241,39 @@ def check_checks(enable_checks):
             failed_reasons.append(reason)
     return all_passed, ', '.join(failed_reasons)
 
+# Trap states reported in the status (see set_status).
+STATE_RESETTING = "RESETTING"        # Arming the cage (if there is one) and resetting the spool
+STATE_RESET_FAILED = "RESET_FAILED"  # The reed switch showed the spool didn't stay reset
+STATE_ARMED = "ARMED"                # Reset, waiting for motion while the enable checks pass
+STATE_TRIGGERED = "TRIGGERED"        # Released, waiting spool_reset_delay_minutes to reset
+STATE_CAGE = "CAGE"                  # Released into the cage, see CagePhase
+STATE_MANUAL = "MANUAL"              # In manual mode, until restarted
+
+# set_status updates the trap's status, which the UART thread replies with to a STATUS
+# message, and sends to the camera as STATUS_CHANGED when it changes. It is kept in the shared dict as "status", and only the main thread changes it.
+# The dict is replaced rather than changed so the UART thread never sees one half updated.
+# A field set to None is left out of the reply.
+def set_status(shared_dict, **fields):
+    if shared_dict is None:
+        return
+    status = dict(shared_dict.get("status") or {})
+    status.update(fields)
+    shared_dict.set("status", status, new_key=True)
+
+# status_reply is the STATUS_R payload.
+def status_reply(shared_dict):
+    reply = {}
+    if shared_dict is None:
+        return reply
+    for key, value in (shared_dict.get("status") or {}).items():
+        if value is not None:
+            reply[key] = value
+    if shared_dict.contains("enable"):
+        # Whether the camera is enabling the trap. False when it hasn't, or its ENABLE ran out.
+        enabled_until = shared_dict.get("enable")
+        reply["CameraEnabled"] = bool(enabled_until) and time.time() < enabled_until
+    return reply
+
 # run_sequence takes the spool, motion_check, enable_checks, rpi_uart and from that can run
 # through a trap sequence.
 # This sequence is:
@@ -1250,6 +1311,7 @@ def _run_sequence(
     while True:
         # Step 1: Reset spool. With a cage, arm it first so the doors are in place. This
         # is also what lets an animal go if the trap restarted while holding it.
+        set_status(shared_dict, State=STATE_RESETTING)
         if cage is not None:
             cage.arm()
         print("Resetting spool.")
@@ -1257,6 +1319,7 @@ def _run_sequence(
             # The spool isn't armed, so there is no point waiting for motion, and it isn't
             # tried again. Wait for a manual request (e.g. RESET_SPOOL) or a restart.
             print("Spool reset failed, not trying again until asked to or restarted.")
+            set_status(shared_dict, State=STATE_RESET_FAILED)
             while True:
                 sleep_checking_manual_mode(60, shared_dict)
         print(f"Waiting {user_config.post_reset_cooldown_seconds}s until running trap checks.")
@@ -1266,6 +1329,7 @@ def _run_sequence(
         print("Waiting for motion check and all enable checks to pass.")
         last_motion_message = -user_config.motion_message_gap
         old_enabled = None  # Track previous enabled state so we can log changes.
+        set_status(shared_dict, State=STATE_ARMED)
         old_state = None
         old_failed_check_reasons = None
         apir_max_dt = 0
@@ -1290,6 +1354,7 @@ def _run_sequence(
             enabled, failed_check_reasons = check_checks(enabled_checks)
 
             if old_enabled != enabled:
+                set_status(shared_dict, Enabled=enabled, DisabledReason=None if enabled else failed_check_reasons)
                 if enabled:
                     # Going from disabled to enabled, or first check while enabled.
                     apir_max_dt = 0
@@ -1312,6 +1377,7 @@ def _run_sequence(
 
             # Send message if the disabled reasons change changed
             if not enabled and failed_check_reasons != old_failed_check_reasons:
+                set_status(shared_dict, DisabledReason=failed_check_reasons)
                 if rpi_uart:
                     rpi_uart.send_message(Message(0, "DISABLED", failed_check_reasons))
                 else:
@@ -1331,16 +1397,20 @@ def _run_sequence(
             
         # Step 3: Release spool.
         print("Releasing spool.")
+        # The enable checks only run while armed.
+        set_status(shared_dict, Enabled=None, DisabledReason=None)
         released = spool.release()
 
         # Step 4: With a cage, deal with whatever went into it. The spool stays released
         # throughout, as releasing the animal lets it out back through the spool.
         if cage is not None and released:
+            set_status(shared_dict, State=STATE_CAGE)
             cage.run()
             continue
 
         # Step 4: Wait for SPOOL_RESET_DELAY_MINUTES
         print(f"Waiting {user_config.spool_reset_delay_minutes} minutes until resetting.")
+        set_status(shared_dict, State=STATE_TRIGGERED)
         sleep_checking_manual_mode(user_config.spool_reset_delay_minutes * 60, shared_dict)
 
         # Step 5: Back to step 1, resetting the spool
@@ -1381,6 +1451,7 @@ def manual_mode(spool: Spool, shared_dict, rpi_uart=None, cage=None):
 
     timeout = user_config.manual_mode_timeout_minutes * 60
     last_request = time.time()
+    set_status(shared_dict, State=STATE_MANUAL, Enabled=None, DisabledReason=None)
 
     while True:
         request = shared_dict.get("request")
@@ -1401,6 +1472,8 @@ def manual_mode(spool: Spool, shared_dict, rpi_uart=None, cage=None):
         # is not lost, and so it doesn't get run twice.
         shared_dict.set("request", None)
         last_request = time.time()
+        # Request is the one being run, so the camera hears when it has finished too.
+        set_status(shared_dict, Request=request)
         print("Manual request: " + str(request))
 
         try:
@@ -1438,6 +1511,7 @@ def manual_mode(spool: Spool, shared_dict, rpi_uart=None, cage=None):
             print(get_err_str(e))
             manual_error(rpi_uart, get_err_str(e))
             stop_all()
+        set_status(shared_dict, Request=None)
 
 def manual_error(rpi_uart, reason):
     # Report a request that couldn't be run. Not using error(), as that reboots the trap

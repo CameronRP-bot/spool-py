@@ -80,6 +80,9 @@ ERROR_SPOOL_NOT_RELEASING = 9
 # is unplugged.
 DEFAULT_ENABLE_SECONDS = 300
 
+# How often the UART thread checks whether to send the camera a STATUS_CHANGED.
+STATUS_PUSH_MS = 100
+
 # This is used so when resetting the first time it knows how long each "step" should be.
 HOME_TO_RESET_DURATION = 13
 

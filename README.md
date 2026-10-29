@@ -19,6 +19,16 @@ There is a rotary switch on the PCB to select different programs.
 
 If the program uses the UART then it can commands can be sent though UART to update the software/time and other such commands.
 
+## Status
+
+The camera can ask the trap what it is doing with a `STATUS` message. The trap answers straight away with a `STATUS_R` message. The trap also sends the status on its own, as a `STATUS_CHANGED` message, whenever it changes, or the camera's ENABLE runs out (checked every 100 ms, so changes close together are sent as one). Both payloads are JSON with:
+
+- `State`: what the trap sequence is doing. `RESETTING` (arming the cage, if there is one, and resetting the spool), `RESET_FAILED` (the reed switch showed the spool didn't stay reset, see `spool_reed_check`), `ARMED` (waiting for motion), `TRIGGERED` (waiting `spool_reset_delay_minutes` to reset), `CAGE` (running the cage sequence) or `MANUAL` (in manual mode). Programs that don't run the trap sequence leave it out.
+- `Enabled` and `DisabledReason`: while `ARMED`, whether the enable checks pass and, if not, why.
+- `Request`: in manual mode, the request being run, such as `OPEN_DOOR_1`.
+- `CagePhase`: with `cage_enabled`, the cage phase: `IDLE`, `WAITING_FOR_ENTRY`, `MOVING`, `HOLDING`, `EXITING` or `MANUAL`.
+- `CameraEnabled`: for programs the camera enables, whether the camera's last ENABLE is still in force.
+
 ## Events
 
 When the trap communicates with the camera it can send though messages that the camera will turn into events. These are:
