@@ -45,6 +45,7 @@ When the trap communicates with the camera it can send though messages that the 
 - trapSpoolReset: The spool on the trap was reset
 - trapSpoolResetFailed: With `spool_reed_check` set, the reed switch showed that the spool didn't stay reset. The trap doesn't try again, so it can't trigger until it is asked to reset the spool (a manual RESET_SPOOL) or is restarted. `Reason` says what went wrong.
 - trapRunning: The program that is running on the trap.
+- trapRtcBatteryFlat: The trap started with its RTC showing it lost power, because the RTC battery is flat. The time is wrong until the camera sets it, which it does once its own clock has synced. Until then night only mode counts it as night, so the trap stays active.
 - Cage events, when `cage_enabled` is set (see config.md):
   - trapCageNoEntry: The spool triggered but nothing was seen going into the cage.
   - trapCageCaptured: An animal has been shut in the cage. `HoldHours` is how long until it is released.

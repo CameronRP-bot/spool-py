@@ -434,6 +434,11 @@ class Clock:
         )
 
     def is_night(self):
+        # A flat RTC battery means the time is wrong, so it can't tell night from day. It counts
+        # as night so a night only trap stays active. The flag clears once the camera sets the
+        # time (WRITE_TIME), so the real night check comes back then.
+        if self.rtc_battery_flat():
+            return True
         utc = self.get_utc_time()
         local_time = self.get_local_time(utc)
         tz = self.nz_tz.get_current_tz(utc).timezone  # pyright: ignore[reportOptionalMemberAccess]
@@ -455,6 +460,11 @@ class Clock:
 
     def check_low_voltage(self):
         return self.r.check_low_voltage()
+
+    # rtc_battery_flat is True when the RTC lost power (its voltage low flag), so its time
+    # can't be trusted. With a good battery the RTC keeps time while the PCB is unpowered.
+    def rtc_battery_flat(self):
+        return self.check_low_voltage() != 0
 
 # class PIRs:
 #     def __init__(self, i2c=i2c):

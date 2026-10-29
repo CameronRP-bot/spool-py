@@ -13,6 +13,7 @@ from config import *
 from util import (
     Buzzer,
     Clock,
+    DictMessage,
     Message,
     RotaryEncoder,
     RPi_UART,
@@ -43,6 +44,8 @@ try:
 except OSError:
     first_run = False
 
+rtc_battery_flat = False
+
 # Set to false to skip using the RTC
 if True:
     if first_run:
@@ -60,12 +63,17 @@ if True:
         os.remove(upload_time_file)
         print("updated the RTC time.")
 
-    if clock.check_low_voltage() != 0:
-        error_code(ERROR_TIME_NOT_SET)
+    # A flat RTC battery isn't an error. It is reported to the camera below, and night only
+    # mode treats it as always night (see Clock.is_night).
+    rtc_battery_flat = clock.rtc_battery_flat()
 
     #year, month, date, day, hour, minute, second = r.datetime()
-    print("RTC time is (UTC): " + str(clock.get_utc_time()))
-    print("Local time is :    " + str(clock.get_local_time()))
+    try:
+        print("RTC time is (UTC): " + str(clock.get_utc_time()))
+        print("Local time is :    " + str(clock.get_local_time()))
+    except ValueError:
+        # The RTC registers can hold an invalid date after it lost power.
+        print("RTC time is invalid")
     # buzzer.on()
     # sleep(1)
     # buzzer.off()
@@ -139,6 +147,10 @@ def save_error(err):
     except Exception:
         print("Error when trying to save to error.log")
 
+
+if rtc_battery_flat:
+    print("RTC battery is flat")
+    uart_one_message(DictMessage(0, "RTC_BATTERY_FLAT", {"Reason": "The RTC lost power, so the time is wrong until the camera sets it"}))
 
 # Check if there is an error from the last boot that we need to report
 try:
