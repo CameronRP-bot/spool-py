@@ -59,22 +59,26 @@ sequence and goes into manual mode, where it only does what it is asked to. If n
 made for this long it restarts itself and carries on with its sequence, so a trap is not left
 disarmed. Set to `0` to stay in manual mode until the trap is restarted. Default: `30`
 
-## `cage_enabled`
+## `cage_doors`
 
-Set to `true` when a holding cage is fitted to the spool. Servo 1 is the cage door the spool opens onto, servo 2 is the cage door out to the kill mechanism, and the external PIR watches the inside of the cage.
+Whether a holding cage is fitted to the spool, and how many doors it has:
 
-The trap arms the cage by shutting door 2 and opening door 1. Once the spool triggers it waits for the external PIR to see the animal in the cage, shuts door 1 behind it, and waits to be told what to do over UART:
+- `0`: no cage.
+- `1`: a cage with only door 1, the door the spool opens onto (servo 1). A held animal can only be released: `CAGE_KILL` and `CAGE_KILLED` get a NACK, and servo 2 isn't used by the cage.
+- `2`: a cage with door 1 and door 2, the door out to the kill mechanism (servo 2). A held animal can be released or killed.
+
+The external PIR watches the inside of the cage. Each door has a reed switch that closes when the door is open: SW1 for door 1 and SW2 for door 2. The trap arms the cage when it starts, and again before each spool reset, by shutting door 2 (if there is one) if SW2 shows it is open, and opening door 1 if SW1 shows it isn't. A door already in place isn't moved. Once the spool triggers it waits for the external PIR to see the animal in the cage, shuts door 1 behind it, and waits to be told what to do over UART:
 
 - `CAGE_HOLD`: hold the animal for another `cage_hold_hours`.
 - `CAGE_RELEASE`: open door 1 so the animal can get out back through the spool, which is still released. This also happens if no command comes in for `cage_hold_hours`.
-- `CAGE_KILL`: open door 2 so the animal goes through to the kill mechanism.
+- `CAGE_KILL` (2 doors only): open door 2 so the animal goes through to the kill mechanism.
 
 With a door open it then waits up to `cage_exit_wait_hours` for the animal to go:
 
 - `CAGE_WAIT`: wait another `cage_exit_wait_hours`.
-- `CAGE_ESCAPED` / `CAGE_KILLED`: the animal has gone.
+- `CAGE_ESCAPED` / `CAGE_KILLED` (2 doors only): the animal has gone.
 
-After that, or if nothing went into the cage, the cage is armed again and the spool reset. Nothing is saved, so if the trap restarts it forgets anything it was holding and arming the cage lets the animal out. A command sent when it doesn't apply (for example `CAGE_WAIT` while holding) gets a NACK saying why. Default: `false`
+After that, or if nothing went into the cage, the cage is armed again and the spool reset. Nothing is saved, so if the trap restarts it forgets anything it was holding and arming the cage lets the animal out. A command sent when it doesn't apply (for example `CAGE_WAIT` while holding) gets a NACK saying why. Default: `0`
 
 ## `cage_entry_timeout_minutes`
 

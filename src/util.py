@@ -636,6 +636,8 @@ class RPi_UART:
                     phase = self.shared_dict.get("cage_phase") if self.shared_dict is not None else None
                     if phase is None:
                         self.send_bad_key(message.id)
+                    elif message.type in CAGE_KILL_COMMANDS and not cage_has_kill_door():
+                        self.send_nack(message.id, "{} can't be used as the cage only has the door to the spool".format(message.type))
                     elif message.type in CAGE_COMMANDS.get(phase, ()):
                         self.shared_dict.set("cage_command", message.type)
                         self.send_ack(message.id)
@@ -1008,6 +1010,16 @@ CAGE_COMMANDS = {
     CAGE_EXITING: ("CAGE_WAIT", "CAGE_ESCAPED", "CAGE_KILLED"),
 }
 ALL_CAGE_COMMANDS = CAGE_COMMANDS[CAGE_HOLDING] + CAGE_COMMANDS[CAGE_EXITING]
+# The commands that need the kill door, which a cage with only the spool door doesn't have.
+CAGE_KILL_COMMANDS = ("CAGE_KILL", "CAGE_KILLED")
+
+# cage_doors is how many doors the cage has: 0 without a cage, 1 for only the door to the
+# spool (release only), 2 with the door to the kill mechanism too (release and kill).
+def cage_fitted():
+    return user_config.cage_doors != 0
+
+def cage_has_kill_door():
+    return user_config.cage_doors >= 2
 
 class Deadline():
     # time.time() is the RP2040's own clock, counting from boot. WRITE_TIME only sets the
@@ -1038,6 +1050,13 @@ class Cage():
       - CAGE_WAIT: give it another cage_exit_wait_hours.
       - CAGE_ESCAPED / CAGE_KILLED: it has gone, carry on with the trap sequence.
 
+    A cage can also have just door 1 (cage_doors 1). Then servo 2 isn't used, and an
+    animal can only be released, so CAGE_KILL and CAGE_KILLED are refused.
+
+    Each door has a reed switch that closes when the door is open: SW1 for door 1 and
+    SW2 for door 2. Arming only moves a door that the switch shows isn't already where
+    it should be.
+
     None of this is saved, so if the trap restarts it forgets anything it was holding,
     and arming the cage again opens door 1 and lets the animal out.
     """
@@ -1045,23 +1064,32 @@ class Cage():
         self.shared_dict = shared_dict
         self.rpi_uart = rpi_uart
         self.spool_door = RatchetDoor(PIN_SERVO_1, 1, rpi_uart=rpi_uart)
-        self.kill_door = RatchetDoor(PIN_SERVO_2, 2, rpi_uart=rpi_uart)
+        self.kill_door = RatchetDoor(PIN_SERVO_2, 2, rpi_uart=rpi_uart) if cage_has_kill_door() else None
+        # The switches connect to ground when closed, which is when the door is open.
+        self.spool_door_switch = Pin(PIN_SW_1, Pin.IN, Pin.PULL_UP)
+        self.kill_door_switch = Pin(PIN_SW_2, Pin.IN, Pin.PULL_UP) if cage_has_kill_door() else None
         self.pir = Pin(PIN_PIR_EXTERNAL, Pin.IN, Pin.PULL_DOWN)
         if shared_dict is not None:
             shared_dict.set("cage_command", None, new_key=True)
             shared_dict.set("cage_phase", CAGE_IDLE, new_key=True)
 
     def doors(self):
-        return {1: self.spool_door, 2: self.kill_door}
+        doors = {1: self.spool_door}
+        if self.kill_door is not None:
+            doors[2] = self.kill_door
+        return doors
 
-    # arm puts the doors in place for the spool to trigger into the cage.
+    # arm puts the doors in place for the spool to trigger into the cage, moving only the
+    # doors that the switches show aren't already in place.
     def arm(self):
         print("Arming cage.")
         self.set_phase(CAGE_MOVING)
         # Shut the kill door first, so the cage is never open to both the spool and the
         # kill mechanism at once.
-        self.kill_door.release()
-        self.spool_door.reset()
+        if self.kill_door is not None and self.kill_door_switch.value() == 0:
+            self.kill_door.release()
+        if self.spool_door_switch.value() != 0:
+            self.spool_door.reset()
         self.set_phase(CAGE_IDLE)
 
     # run takes over from the trap sequence once the spool has triggered, and returns
@@ -1287,7 +1315,7 @@ def status_reply(shared_dict):
 # run_sequence takes the spool, motion_check, enable_checks, rpi_uart and from that can run
 # through a trap sequence.
 # This sequence is:
-# 1) Reset spool, arming the cage first if one is fitted (cage_enabled)
+# 1) Reset spool, arming the cage first if one is fitted (cage_doors)
 # 2) Wait for motion check and all enable checks to pass.
 #   2a) If motion is detected or the enable checks failing change then make a event reporting this.
 # 3) Release spool.
@@ -1301,7 +1329,7 @@ def run_sequence(
     apir=None
     ):
     shared_dict = rpi_uart.shared_dict if rpi_uart is not None else None
-    cage = Cage(shared_dict, rpi_uart=rpi_uart) if user_config.cage_enabled else None
+    cage = Cage(shared_dict, rpi_uart=rpi_uart) if cage_fitted() else None
     try:
         _run_sequence(spool, motion_check, enabled_checks, shared_dict, rpi_uart, apir, cage)
     except ManualMode:

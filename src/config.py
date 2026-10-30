@@ -103,7 +103,7 @@ class UserConfig():
         self.post_reset_cooldown_seconds = 1
         self.spool_reed_check = False
         self.manual_mode_timeout_minutes = 30
-        self.cage_enabled = False
+        self.cage_doors = 0
         self.cage_entry_timeout_minutes = 60
         self.cage_hold_hours = 24
         self.cage_exit_wait_hours = 24
