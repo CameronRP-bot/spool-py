@@ -1284,6 +1284,7 @@ STATE_RESETTING = "RESETTING"        # Arming the cage (if there is one) and res
 STATE_RESET_FAILED = "RESET_FAILED"  # The reed switch showed the spool didn't stay reset
 STATE_ARMED = "ARMED"                # Reset, waiting for motion while the enable checks pass
 STATE_TRIGGERED = "TRIGGERED"        # Released, waiting spool_reset_delay_minutes to reset
+STATE_DRY_TRIGGERED = "DRY_TRIGGERED"  # Observation mode, would have released, waiting spool_reset_delay_minutes
 STATE_CAGE = "CAGE"                  # Released into the cage, see CagePhase
 STATE_MANUAL = "MANUAL"              # In manual mode, until restarted
 
@@ -1321,6 +1322,9 @@ def status_reply(shared_dict):
 # 3) Release spool.
 # 4) Wait for SPOOL_RESET_DELAY_MINUTES, or with a cage run the cage sequence (see Cage)
 # 5) Back to step 1, resetting the spool
+# In observation mode step 3 sends DRY_TRIGGERED instead of releasing the spool. It still
+# waits in step 4, so it reports about as often as the real trap would trigger, then goes
+# back to step 2, as the spool is still reset.
 def run_sequence(
     spool: Spool,
     motion_check,
@@ -1337,6 +1341,23 @@ def run_sequence(
         # return, so the sequence is abandoned rather than resumed part way through.
         manual_mode(spool, shared_dict, rpi_uart=rpi_uart, cage=cage)
 
+# _reset_trap is step 1 of the sequence. With a cage it arms it first so the doors are in
+# place. This is also what lets an animal go if the trap restarted while holding it.
+def _reset_trap(spool, cage, shared_dict):
+    set_status(shared_dict, State=STATE_RESETTING)
+    if cage is not None:
+        cage.arm()
+    print("Resetting spool.")
+    if not spool.reset_sequence():
+        # The spool isn't armed, so there is no point waiting for motion, and it isn't
+        # tried again. Wait for a manual request (e.g. RESET_SPOOL) or a restart.
+        print("Spool reset failed, not trying again until asked to or restarted.")
+        set_status(shared_dict, State=STATE_RESET_FAILED)
+        while True:
+            sleep_checking_manual_mode(60, shared_dict)
+    print(f"Waiting {user_config.post_reset_cooldown_seconds}s until running trap checks.")
+    sleep_checking_manual_mode(user_config.post_reset_cooldown_seconds, shared_dict)
+
 def _run_sequence(
     spool: Spool,
     motion_check,
@@ -1346,22 +1367,14 @@ def _run_sequence(
     apir=None,
     cage=None
     ):
+    if user_config.observation_mode:
+        set_status(shared_dict, ObservationMode=True)
+    is_reset = False
     while True:
-        # Step 1: Reset spool. With a cage, arm it first so the doors are in place. This
-        # is also what lets an animal go if the trap restarted while holding it.
-        set_status(shared_dict, State=STATE_RESETTING)
-        if cage is not None:
-            cage.arm()
-        print("Resetting spool.")
-        if not spool.reset_sequence():
-            # The spool isn't armed, so there is no point waiting for motion, and it isn't
-            # tried again. Wait for a manual request (e.g. RESET_SPOOL) or a restart.
-            print("Spool reset failed, not trying again until asked to or restarted.")
-            set_status(shared_dict, State=STATE_RESET_FAILED)
-            while True:
-                sleep_checking_manual_mode(60, shared_dict)
-        print(f"Waiting {user_config.post_reset_cooldown_seconds}s until running trap checks.")
-        sleep_checking_manual_mode(user_config.post_reset_cooldown_seconds, shared_dict)
+        # Step 1: Reset spool. Observation mode never releases it, so it stays reset.
+        if not (user_config.observation_mode and is_reset):
+            _reset_trap(spool, cage, shared_dict)
+            is_reset = True
 
         # Step 2: Wait for motion check and all enable checks to pass.
         print("Waiting for motion check and all enable checks to pass.")
@@ -1433,10 +1446,20 @@ def _run_sequence(
                 print(state)
                 old_state = state
             
-        # Step 3: Release spool.
-        print("Releasing spool.")
         # The enable checks only run while armed.
         set_status(shared_dict, Enabled=None, DisabledReason=None)
+
+        # Step 3, in observation mode: Report what would have happened, and leave the spool alone.
+        if user_config.observation_mode:
+            print("Observation mode, not releasing spool.")
+            if rpi_uart:
+                rpi_uart.send_message(Message(0, "DRY_TRIGGERED"))
+            set_status(shared_dict, State=STATE_DRY_TRIGGERED)
+            sleep_checking_manual_mode(user_config.spool_reset_delay_minutes * 60, shared_dict)
+            continue
+
+        # Step 3: Release spool.
+        print("Releasing spool.")
         released = spool.release()
 
         # Step 4: With a cage, deal with whatever went into it. The spool stays released

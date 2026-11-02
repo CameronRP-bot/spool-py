@@ -38,7 +38,7 @@ Must be one of `"AND"` or `"OR"`. If `"OR"` then the trap will be disabled if ei
 
 ## `observation_mode`
 
-In Observation Mode the trap resets at boot but does not trigger. If in a mode that reports events, it will send a `"dry-trigger"` event instead of `"triggered"`. Useful for testing AI trigger accuracy without disturbing animals. Default: `false`
+In Observation Mode the trap resets the spool when it starts but never releases it. When it would have triggered, a program that uses the UART sends `DRY_TRIGGERED` instead of `TRIGGERED`, then waits `spool_reset_delay_minutes` (with or without a cage), so it reports about as often as the real trap would trigger. The spool doesn't move again and the cage sequence doesn't run. A manual `RELEASE_SPOOL` over UART still releases the spool, and the test programs (such as program 8) ignore this setting. Useful for testing AI trigger accuracy without disturbing animals. Default: `false`
 
 ## `motion_message_gap`
 
